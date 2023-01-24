@@ -22,7 +22,9 @@
 namespace bustub {
 
 template <typename K, typename V>
-ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size) : bucket_size_(bucket_size) {}
+ExtendibleHashTable<K, V>::ExtendibleHashTable(size_t bucket_size) : bucket_size_(bucket_size) {
+  dir_.emplace_back(std::make_shared<Bucket>(bucket_size_, global_depth_));
+}
 
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::IndexOf(const K &key) -> size_t {
@@ -81,29 +83,31 @@ template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
   std::scoped_lock<std::mutex> lock(latch_);
   size_t index = IndexOf(key);
-  if(!(dir_[index] -> Find(key, const_cast<V&>(value)))) {
+  V val;
+  if(!(dir_[index] -> Find(key, val))) {
     if(dir_[index] -> IsFull()) {
       int local_depth = dir_[index] -> GetDepth();
       if(local_depth == global_depth_) {
         dir_.reserve(dir_.size() << 1);
         global_depth_++;
-        std::copy_n(dir_.begin(), dir_.size() >> 1, std::back_inserter(dir_));
+        std::copy_n(dir_.begin(), dir_.size(), std::back_inserter(dir_)); // 复制直至最后一个 iterator
       }
+      num_buckets_++;
       auto bucket0 = std::make_shared<Bucket>(bucket_size_, local_depth + 1);
       auto bucket1 = std::make_shared<Bucket>(bucket_size_, local_depth + 1);
       int local_mask = 1 << local_depth;
-      for(auto &[k,v] : dir_[index] -> GetItems()) {
+      for(const auto &[k,v] : dir_[index] -> GetItems()) {
         if(std::hash<K>()(k) & local_mask) {
-          bucket1 -> Insert(k , v);
+          bucket1 -> Insert(k, v);
         } else {
           bucket0 -> Insert(k, v);
         }
       }
       for(size_t i = (std::hash<K>()(key) & (local_mask-1)); i < dir_.size(); i+=local_mask) {
         if(i & local_mask) {
-          dir_[i] = bucket0;
-        } else {
           dir_[i] = bucket1;
+        } else {
+          dir_[i] = bucket0;
         }
       }
       index = IndexOf(key);
@@ -121,7 +125,7 @@ ExtendibleHashTable<K, V>::Bucket::Bucket(size_t array_size, int depth) : size_(
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::Find(const K &key, V &value) -> bool {
   // UNREACHABLE("not implemented");
-  for(auto &[k,v] : list_) {
+  for(const auto &[k,v] : list_) {
     if(key == k) {
       value = v;
       return true;
