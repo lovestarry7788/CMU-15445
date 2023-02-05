@@ -71,26 +71,28 @@ auto BufferPoolManager::NewPage(page_id_t *page_id) -> Page * {
   if(!free_list_.empty()) {
     frame_id = free_list_.front();
     free_list_.pop_front();
-  } else if(replacer_ -> Evict(&frame_id) == false) {  // 能找到剔除的页面
+  } else if(replacer_ -> Evict(&frame_id) == true) {  // 能找到剔除的页面
+    auto page = pages_ + frame_id;
+    if(page -> is_dirty_) {
+      disk_manager_ ->WritePage(page -> page_id_, page -> data_);
+      page -> is_dirty_ = false;
+    }
+    page->ResetMemory();
+    page_table_->Remove(page -> page_id_);
+  } else {
     return nullptr;
   }
 
   // 2. 获取 page_id
   *page_id = AllocatePage();
-  if(pages_[frame_id].is_dirty_) {
-    disk_manager_ ->WritePage(pages_[frame_id].page_id_, pages_[frame_id].data_);
-    pages_[frame_id].is_dirty_ = false;
-  }
-  page_table_->Remove(pages_[frame_id].page_id_);
-
   auto page = pages_ + frame_id;
   page->page_id_ = *page_id;
   page->pin_count_ ++;
+  replacer_->RecordAccess(frame_id);
   replacer_->SetEvictable(frame_id, false);
-  page->ResetMemory();
   page_table_ -> Insert(*page_id, frame_id);
 
-  return page;
+  return &pages_[frame_id];
 }
 
 /**
@@ -118,7 +120,8 @@ auto BufferPoolManager::FetchPage(page_id_t page_id) -> Page * {
   if(can_find == true) {
     auto page = pages_ + frame_id;
     page -> pin_count_ ++;
-    replacer_ ->SetEvictable(page_id, false);
+    replacer_ ->RecordAccess(frame_id);
+    replacer_ ->SetEvictable(frame_id, false);
     return page;
   }
 
@@ -126,26 +129,28 @@ auto BufferPoolManager::FetchPage(page_id_t page_id) -> Page * {
   if(!free_list_.empty()) {
     frame_id = free_list_.front();
     free_list_.pop_front();
-  } else if(replacer_->Evict(&frame_id) == false) {
+  } else if(replacer_->Evict(&frame_id) == true) {
+    auto page = pages_ + frame_id;
+    if(page -> is_dirty_) {
+      disk_manager_ ->WritePage(page->page_id_, page->data_);
+      page -> is_dirty_ = false;
+    }
+    page->ResetMemory();
+    page_table_->Remove(page->page_id_);
+  } else {
     return nullptr;
   }
 
   // 3. 获取 page_id
   auto page = pages_ + frame_id;
-  if(page -> is_dirty_) {
-    disk_manager_ ->WritePage(page->page_id_, page->data_);
-    page -> is_dirty_ = false;
-  }
-  page_table_->Remove(page->page_id_);
-
   page->page_id_ = page_id;
   page->pin_count_ ++;
-  replacer_->SetEvictable(page_id, false);
+  replacer_->RecordAccess(frame_id);
+  replacer_->SetEvictable(frame_id, false);
   disk_manager_ -> ReadPage(page_id, page->data_);
-  page->ResetMemory();
   page_table_ -> Insert(page_id, frame_id);
 
-  return page;
+  return &pages_[frame_id];
 }
 
 /**
@@ -245,7 +250,7 @@ auto BufferPoolManager::DeletePage(page_id_t page_id) -> bool {
     return false;
   }
   if(page -> IsDirty()) {
-    page -> is_dirty_ = 0;
+    page -> is_dirty_ = false;
     disk_manager_ ->WritePage(page_id, page->GetData());
   }
   page_table_->Remove(pages_[frame_id].page_id_);
