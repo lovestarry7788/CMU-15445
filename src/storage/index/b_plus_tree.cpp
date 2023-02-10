@@ -21,7 +21,7 @@ BPLUSTREE_TYPE::BPlusTree(std::string name, BufferPoolManager *buffer_pool_manag
  * Helper function to decide whether current b+tree is empty
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
+auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_PAGE_ID; }
 /*****************************************************************************
  * SEARCH
  *****************************************************************************/
@@ -32,9 +32,44 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return true; }
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  return false;
+  auto *leaf_page = FindLeaf(key, Operation::Find, transaction);
+  auto *leaf_node = reinterpret_cast<LeafPage *>(leaf_page -> GetData());
+
+  ValueType value;
+  bool is_exist = leaf_node -> Lookup(key, &value, comparator_);
+
+  if(!is_exist) {
+    return false;
+  }
+
+  return true;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transaction *transaction, bool leftMost, bool rightMost) -> Page* {
+  auto *page = buffer_pool_manager_ ->FetchPage(root_page_id_);
+  auto *node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+
+  while(!node -> IsLeafPage()) {
+    auto *i_node = reinterpret_cast<InternalPage *>(node);
+    page_id_t child_node_page_id;
+    if(leftMost) {
+      child_node_page_id = i_node -> ValueAt(0);
+    } else if(rightMost) {
+      child_node_page_id = i_node -> ValueAt(i_node -> GetSize() - 1);
+    } else {
+      child_node_page_id = i_node -> Lookup(key, comparator_);
+    }
+
+    auto *child_page = buffer_pool_manager_ ->FetchPage(child_node_page_id);
+    auto *child_node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+
+    page = child_page;
+    node = child_node;
+  }
+
+  return page;
+}
 /*****************************************************************************
  * INSERTION
  *****************************************************************************/
@@ -47,7 +82,35 @@ auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  return false;
+  // rwlatch_.WLock();
+  if(IsEmpty()) {
+    StartNewTree(key, value);
+    return true;
+  }
+
+  return InsertIntoLeaf(key, value);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
+  auto page = buffer_pool_manager_ ->NewPage(&root_page_id_);
+  if(page == nullptr) {
+    throw ;
+  }
+  auto *leaf = reinterpret_cast<LeafPage *>(page -> GetData());
+  // leaf -> Init();
+  leaf -> Insert(key ,value, comparator_);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value) -> bool {
+  auto leaf_page = FindLeaf(key);
+  auto *node = reinterpret_cast<LeafPage*>(leaf_page -> GetData());
+
+  auto size = node -> GetSize();
+  auto new_size = node -> Insert(key, value, comparator_);
+
+
 }
 
 /*****************************************************************************

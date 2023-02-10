@@ -23,6 +23,8 @@ namespace bustub {
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
 
+enum class Operation {Find, Insert, Delete};
+
 /**
  * Main class providing the API for the Interactive B+ Tree.
  *
@@ -82,6 +84,17 @@ class BPlusTree {
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
 
+  /* Add new Function */
+  void StartNewTree(const KeyType &key, const ValueType &value);
+
+  auto InsertIntoLeaf(const KeyType &key, const ValueType &value) -> bool;
+
+  void InsertIntoParent(const KeyType &key, const ValueType &value);
+
+  auto FindLeaf(const KeyType &key, Operation operation = Operation::Find,
+                Transaction *transaction = nullptr, bool leftMost = false,
+                bool rightMost = false) -> Page*;
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -89,6 +102,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  ReaderWriterLatch rwlatch_;
 };
 
 }  // namespace bustub

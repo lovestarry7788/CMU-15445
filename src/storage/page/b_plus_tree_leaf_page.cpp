@@ -27,16 +27,23 @@ namespace bustub {
  * next page id and set max size
  */
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {}
+void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, int max_size) {
+    SetPageType(IndexPageType::LEAF_PAGE);
+    SetMaxSize(max_size);
+    SetParentPageId(parent_id);
+    SetPageId(page_id);
+    SetSize(0);
+    SetNextPageId(INVALID_PAGE_ID);
+}
 
 /**
  * Helper methods to set/get next page id
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetNextPageId() const -> page_id_t { return INVALID_PAGE_ID; }
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetNextPageId() const -> page_id_t { return next_page_id_; }
 
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {}
+void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
 
 /*
  * Helper method to find and return the key associated with input "index"(a.k.a
@@ -44,9 +51,42 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {}
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyAt(int index) const -> KeyType {
-  // replace with your own code
-  KeyType key{};
-  return key;
+  return array_[index].first;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::ValueAt(int index) const -> ValueType {
+  return array_[index].second;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparator &keyComparator) const -> int {
+  int l = 0; int r = GetSize() - 1; int ret = 0;
+  while(l <= r) {
+    int mid = (r - l) / 2 + l;
+    if(keyComparator(KeyAt(mid), key) <= 0) {
+      l = mid + 1;
+      ret = mid;
+    } else {
+      r = mid - 1;
+    }
+  }
+  return ret;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator) -> int {
+
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Lookup(const KeyType &key, ValueType *value, const KeyComparator &keyComparator) const -> bool {
+  int index = KeyIndex(key, keyComparator);
+  if(index == GetSize() || keyComparator(KeyAt(index), key) != 0) { // GetSize == 0 的情况
+    return false;
+  }
+  *value = ValueAt(index);
+  return true;
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
