@@ -32,23 +32,24 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
-  auto *leaf_page = FindLeaf(key, Operation::Find, transaction);
-  auto *leaf_node = reinterpret_cast<LeafPage *>(leaf_page -> GetData());
+  auto leaf_page = FindLeaf(key, Operation::Find, transaction);
+  auto leaf_node = reinterpret_cast<LeafPage *>(leaf_page -> GetData());
 
   ValueType value;
   bool is_exist = leaf_node -> Lookup(key, &value, comparator_);
 
-  if(!is_exist) {
-    return false;
-  }
+  buffer_pool_manager_ -> UnpinPage(leaf_page -> GetPageId(), false);
+
+  if (!is_exist) return false;
+  result->emplace_back(value);
 
   return true;
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transaction *transaction, bool leftMost, bool rightMost) -> Page* {
-  auto *page = buffer_pool_manager_ ->FetchPage(root_page_id_);
-  auto *node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+  auto page = buffer_pool_manager_ ->FetchPage(root_page_id_);
+  auto node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
 
   while(!node -> IsLeafPage()) {
     auto *i_node = reinterpret_cast<InternalPage *>(node);
@@ -61,8 +62,8 @@ auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transacti
       child_node_page_id = i_node -> Lookup(key, comparator_);
     }
 
-    auto *child_page = buffer_pool_manager_ ->FetchPage(child_node_page_id);
-    auto *child_node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+    auto child_page = buffer_pool_manager_ ->FetchPage(child_node_page_id);
+    auto child_node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
 
     page = child_page;
     node = child_node;
@@ -82,33 +83,48 @@ auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transacti
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  // rwlatch_.WLock();
-  if(IsEmpty()) {
-    StartNewTree(key, value);
-    return true;
+  {
+    std::scoped_lock lock(latch_);
+    if (IsEmpty()) {
+      StartNewTree(key, value);
+      return true;
+    }
   }
-
   return InsertIntoLeaf(key, value);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
-  auto page = buffer_pool_manager_ ->NewPage(&root_page_id_);
-  if(page == nullptr) {
-    throw ;
+  // 1. 向缓存池中申请一个 new page, 作为 root page
+  auto root_page = buffer_pool_manager_ ->NewPage(&root_page_id_);
+  if(root_page == nullptr) {
+    throw std::runtime_error("Cannot start new tree!");
   }
-  auto *leaf = reinterpret_cast<LeafPage *>(page -> GetData());
-  // leaf -> Init();
-  leaf -> Insert(key ,value, comparator_);
+
+  // 2. 更新 header page，添加索引的信息
+  UpdateRootPageId(1);
+
+  auto root_node = reinterpret_cast<LeafPage *>(root_page -> GetData());
+  root_node -> Init(root_page_id_, INVALID_PAGE_ID, leaf_max_size_);
+  root_node -> Insert(key ,value, comparator_);
+
+  buffer_pool_manager_ -> UnpinPage(root_page -> GetPageId(), true);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value) -> bool {
   auto leaf_page = FindLeaf(key);
-  auto *node = reinterpret_cast<LeafPage*>(leaf_page -> GetData());
+  auto leaf_node = reinterpret_cast<LeafPage*>(leaf_page -> GetData());
 
-  auto size = node -> GetSize();
-  auto new_size = node -> Insert(key, value, comparator_);
+  ValueType value;
+  bool is_exist = leaf_node -> Lookup(key, &value, comparator_);
+  if (is_exist) {
+    // buffer_pool_manager_ ->UnpinPage(leaf_page -> GetPageId(), false);
+    return false;
+  }
+
+  auto size = leaf_node -> GetSize();
+  auto new_size = leaf_node -> Insert(key, value, comparator_);
 
 
 }
@@ -170,6 +186,8 @@ auto BPLUSTREE_TYPE::GetRootPageId() -> page_id_t { return 0; }
  * insert a record <index_name, root_page_id> into header page instead of
  * updating it.
  */
+
+// header page 包含了 所有索引的名字 + root_id
 INDEX_TEMPLATE_ARGUMENTS
 void BPLUSTREE_TYPE::UpdateRootPageId(int insert_record) {
   auto *header_page = static_cast<HeaderPage *>(buffer_pool_manager_->FetchPage(HEADER_PAGE_ID));
