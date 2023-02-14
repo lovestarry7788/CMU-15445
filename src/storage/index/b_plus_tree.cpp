@@ -112,7 +112,7 @@ void BPLUSTREE_TYPE::StartNewTree(const KeyType &key, const ValueType &value) {
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value) -> bool {
+auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
   auto leaf_page = FindLeaf(key);
   auto leaf_node = reinterpret_cast<LeafPage*>(leaf_page -> GetData());
 
@@ -126,7 +126,93 @@ auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value) 
   auto size = leaf_node -> GetSize();
   auto new_size = leaf_node -> Insert(key, value, comparator_);
 
+  // duplicate key
+  if(new_size == size) {
+    buffer_pool_manager_ -> UnpinPage(leaf_page -> GetPageId(), false);
+    return false;
+  }
 
+  // leaf not full
+  if(new_size < leaf_max_size_) {
+    buffer_pool_manager_ -> UnpinPage(leaf_page -> GetPageId(), true);
+    return true;
+  }
+
+  auto *new_leaf_node = Split(leaf_node);
+  InsertIntoParent(leaf_node, new_leaf_node -> KeyAt(0), new_leaf_node, transaction);
+  buffer_pool_manager_ -> UnpinPage(leaf_page -> GetPageId(), true);
+  buffer_pool_manager_ -> UnpinPage(new_leaf_node -> GetPageId(), true);
+  return true;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &key,
+                                      BPlusTreePage *new_node, Transaction *transaction) {
+  // 1. old_node 是根节点，整个树升高一层
+
+  if(old_node -> IsRootPage()) {
+    page_id_t new_page_id = INVALID_PAGE_ID;
+    Page *new_page = buffer_pool_manager_ -> NewPage(&new_page_id);
+    InternalPage *new_root_node = reinterpret_cast<InternalPage *>(new_page -> GetData());
+
+    root_page_id_ = new_page_id;
+    new_root_node -> Init(new_page_id, INVALID_PAGE_ID, internal_max_size_);
+    new_root_node -> PopulateNewRoot(old_node -> GetPageId(), key, new_node -> GetPageId());
+
+    old_node -> SetParentPageId(new_page_id);
+    new_node -> SetParentPageId(new_page_id);
+
+    UpdateRootPageId(0);
+    return ;
+  }
+
+  // 2. old_node 不是根节点，找到 old_node 的父节点操作。
+  Page *parent_page = buffer_pool_manager_ -> FetchPage(old_node -> GetParentPageId());
+  InternalPage *parent_node = reinterpret_cast<InternalPage *>(parent_page -> GetData());
+  parent_node -> InsertAfterNode(old_node, key, new_node);
+
+  if(parent_node -> GetSize() <= parent_node -> GetMaxSize()) {
+    buffer_pool_manager_ -> UnpinPage(parent_node -> GetPageId(), true);
+    return ;
+  }
+
+  InternalPage *new_parent_node = Split(parent_node);
+  InsertIntoParent(parent_node, new_parent_node -> KeyAt(0), new_parent_node, transaction);
+  buffer_pool_manager_ -> UnpinPage(parent_node -> GetPageId(), true);
+  buffer_pool_manager_ -> UnpinPage(new_parent_node -> GetPageId(), true);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+template <typename N>
+N *BPLUSTREE_TYPE::Split(N *node) {
+  page_id_t new_page_id = INVALID_PAGE_ID;
+  auto *new_page = buffer_pool_manager_ -> NewPage(&new_page_id);
+  if(new_page == nullptr) {
+    throw std::runtime_error("Cannot create new page!");
+  }
+  auto *new_node = reinterpret_cast<N *>(new_page -> GetData());
+
+  new_node -> SetPageType(node -> GetPageType());
+
+  if(node -> IsLeafPage()) {
+    auto *old_leaf_node = reinterpret_cast<LeafPage *>(node);
+    auto *new_leaf_node = reinterpret_cast<LeafPage *>(new_node);
+    new_leaf_node -> Init(new_page_id, old_leaf_node -> GetParentPageId(),leaf_max_size_);
+    old_leaf_node -> MoveHalfTo(new_leaf_node);
+
+    new_leaf_node -> SetNextPageId(old_leaf_node -> GetNextPageId());
+    old_leaf_node -> SetNextPageId(new_leaf_node -> GetPageId());
+    new_node = reinterpret_cast<N *>(new_leaf_node);
+  } else {
+    auto *old_internal_node = reinterpret_cast<InternalPage *>(node);
+    auto *new_internal_node = reinterpret_cast<InternalPage *>(new_node);
+
+    new_internal_node -> Init(new_page_id, old_internal_node -> GetParentPageId(), internal_max_size_);
+    old_internal_node -> MoveHalfTo(old_internal_node);
+    new_node = reinterpret_cast<N *>(old_internal_node);
+  }
+
+  return new_node;
 }
 
 /*****************************************************************************

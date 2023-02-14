@@ -87,13 +87,16 @@ class BPlusTree {
   /* Add new Function */
   void StartNewTree(const KeyType &key, const ValueType &value);
 
-  auto InsertIntoLeaf(const KeyType &key, const ValueType &value) -> bool;
+  auto InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool;
 
-  void InsertIntoParent(const KeyType &key, const ValueType &value);
+  void InsertIntoParent(BPlusTreePage *old_page, const KeyType &key,
+                        BPlusTreePage *new_page, Transaction *transaction);
 
   auto FindLeaf(const KeyType &key, Operation operation = Operation::Find,
                 Transaction *transaction = nullptr, bool leftMost = false,
                 bool rightMost = false) -> Page*;
+
+  template<typename N> N *Split(N *node);
 
   // member variable
   std::string index_name_;

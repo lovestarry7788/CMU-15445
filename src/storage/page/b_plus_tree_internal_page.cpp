@@ -68,6 +68,33 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyCompara
   return array_[ret].second;
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::PopulateNewRoot(const ValueType &old_value, const KeyType &key, const ValueType &new_value) {
+  array_[0].second = old_value;
+  array_[1].first = key;
+  array_[1].second = new_value;
+  SetSize(2);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const->int {
+  for(int i = 0; i < GetSize(); ++i) {
+    if(ValueAt(i) == value) return i;
+  }
+  return -1;
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAfterNode(const ValueType &old_value, const KeyType &key, const ValueType &new_value) {
+  int insert_index = ValueIndex(old_value);
+  insert_index ++;
+  for (int i = GetSize(); i > insert_index; --i) {
+    array_[i] = array_[i-1];
+  }
+  array_[insert_index] = {key, new_value};
+  IncreaseSize(1);
+}
+
 // valuetype for internalNode should be page id_t
 template class BPlusTreeInternalPage<GenericKey<4>, page_id_t, GenericComparator<4>>;
 template class BPlusTreeInternalPage<GenericKey<8>, page_id_t, GenericComparator<8>>;
