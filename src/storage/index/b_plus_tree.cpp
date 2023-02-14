@@ -32,17 +32,19 @@ auto BPLUSTREE_TYPE::IsEmpty() const -> bool { return root_page_id_ == INVALID_P
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::GetValue(const KeyType &key, std::vector<ValueType> *result, Transaction *transaction) -> bool {
+  // 查找 key 对应的 leaf_page
   auto leaf_page = FindLeaf(key, Operation::Find, transaction);
   auto leaf_node = reinterpret_cast<LeafPage *>(leaf_page -> GetData());
 
   ValueType value;
   bool is_exist = leaf_node -> Lookup(key, &value, comparator_);
-
+  // 用完需要直接 Unpin 掉
   buffer_pool_manager_ -> UnpinPage(leaf_page -> GetPageId(), false);
 
-  if (!is_exist) return false;
+  if (!is_exist) {
+    return false;
+  }
   result->emplace_back(value);
-
   return true;
 }
 
@@ -50,6 +52,12 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transaction *transaction, bool leftMost, bool rightMost) -> Page* {
   auto page = buffer_pool_manager_ ->FetchPage(root_page_id_);
   auto node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+
+  /*
+  if (operation == Operation :: Find) {
+    page -> RLatch();
+  }
+  */
 
   while(!node -> IsLeafPage()) {
     auto *i_node = reinterpret_cast<InternalPage *>(node);
@@ -64,6 +72,14 @@ auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transacti
 
     auto child_page = buffer_pool_manager_ ->FetchPage(child_node_page_id);
     auto child_node = reinterpret_cast<BPlusTreePage *>(page -> GetData());
+
+    /* 释放原来的页和锁，对孩子节点的页加读锁
+    if(operation == Operation::Find) {
+      page -> RUnlatch();
+      child_page -> RLatch();
+      buffer_pool_manager_ -> UnpinPage(page -> GetPageId(), false);
+    }
+    */
 
     page = child_page;
     node = child_node;
@@ -83,14 +99,14 @@ auto BPLUSTREE_TYPE::FindLeaf(const KeyType &key, Operation operation, Transacti
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Insert(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
-  {
-    std::scoped_lock lock(latch_);
-    if (IsEmpty()) {
-      StartNewTree(key, value);
-      return true;
-    }
+  //{
+  //  std::scoped_lock lock(latch_);
+  if (IsEmpty()) {
+    StartNewTree(key, value);
+    return true;
   }
-  return InsertIntoLeaf(key, value);
+  //}
+  return InsertIntoLeaf(key, value, transaction);
 }
 
 INDEX_TEMPLATE_ARGUMENTS
@@ -115,13 +131,6 @@ INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::InsertIntoLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool {
   auto leaf_page = FindLeaf(key);
   auto leaf_node = reinterpret_cast<LeafPage*>(leaf_page -> GetData());
-
-  ValueType value;
-  bool is_exist = leaf_node -> Lookup(key, &value, comparator_);
-  if (is_exist) {
-    // buffer_pool_manager_ ->UnpinPage(leaf_page -> GetPageId(), false);
-    return false;
-  }
 
   auto size = leaf_node -> GetSize();
   auto new_size = leaf_node -> Insert(key, value, comparator_);
@@ -169,9 +178,10 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
   // 2. old_node 不是根节点，找到 old_node 的父节点操作。
   Page *parent_page = buffer_pool_manager_ -> FetchPage(old_node -> GetParentPageId());
   InternalPage *parent_node = reinterpret_cast<InternalPage *>(parent_page -> GetData());
-  parent_node -> InsertAfterNode(old_node, key, new_node);
+  parent_node -> InsertAfterNode(old_node -> GetPageId(), key, new_node -> GetPageId());
 
-  if(parent_node -> GetSize() <= parent_node -> GetMaxSize()) {
+  // number of children BEFORE insertion equals to max_size for internal nodes.
+  if(parent_node -> GetSize() < parent_node -> GetMaxSize()) {
     buffer_pool_manager_ -> UnpinPage(parent_node -> GetPageId(), true);
     return ;
   }
@@ -208,7 +218,7 @@ N *BPLUSTREE_TYPE::Split(N *node) {
     auto *new_internal_node = reinterpret_cast<InternalPage *>(new_node);
 
     new_internal_node -> Init(new_page_id, old_internal_node -> GetParentPageId(), internal_max_size_);
-    old_internal_node -> MoveHalfTo(old_internal_node);
+    old_internal_node -> MoveHalfTo(new_internal_node);
     new_node = reinterpret_cast<N *>(old_internal_node);
   }
 

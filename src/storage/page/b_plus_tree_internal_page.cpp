@@ -79,7 +79,9 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::PopulateNewRoot(const ValueType &old_value,
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const->int {
   for(int i = 0; i < GetSize(); ++i) {
-    if(ValueAt(i) == value) return i;
+    if(ValueAt(i) == value) {
+      return i;
+    }
   }
   return -1;
 }
@@ -93,6 +95,27 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAfterNode(const ValueType &old_value,
   }
   array_[insert_index] = {key, new_value};
   IncreaseSize(1);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient) {
+  int start_index = GetMinSize();
+  int move_num = GetSize() - GetMinSize();
+  recipient -> CopyNFrom(array_ + start_index, move_num);
+  IncreaseSize(-move_num);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyNFrom(MappingType *items, int size, BufferPoolManager *bufferPoolManager) {
+  std::copy(items, items+size, array_ + GetSize());
+  // 这里多一步，需要修改孩子节点的父亲
+  for(int i = GetSize(); i < GetSize() + size; ++i) {
+    Page *child_page = bufferPoolManager -> FetchPage(ValueAt(i));
+    BPlusTreePage *child_node = reinterpret_cast<BPlusTreePage *>(child_page -> GetData());
+    child_node -> SetParentPageId(GetPageId());
+    bufferPoolManager -> UnpinPage(child_page -> GetPageId(), true);
+  }
+  IncreaseSize(size);
 }
 
 // valuetype for internalNode should be page id_t

@@ -64,7 +64,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparato
   int l = 0; int r = GetSize() - 1; int ret = 0;
   while(l <= r) {
     int mid = (r - l) / 2 + l;
-    if(keyComparator(KeyAt(mid), key) <= 0) {
+    if(keyComparator(KeyAt(mid), key) <= 0) { // 找到最大的 小于等于 key 的 key
       l = mid + 1;
       ret = mid;
     } else {
@@ -76,7 +76,17 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparato
 
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator) -> int {
+  int insert_index = KeyIndex(key, keyComparator);
+  if(keyComparator(KeyAt(insert_index), key) == 0) {
+    return GetSize();
+  }
 
+  for(int i = GetSize(); i > insert_index; --i) {
+    array_[i] = array_[i-1];
+  }
+  array_[insert_index] = MappingType{};
+  IncreaseSize(1);
+  return GetSize();
 }
 
 INDEX_TEMPLATE_ARGUMENTS

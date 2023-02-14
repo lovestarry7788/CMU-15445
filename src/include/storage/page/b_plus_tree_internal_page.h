@@ -45,6 +45,8 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto ValueIndex(const ValueType &value) const -> int;
   void PopulateNewRoot(const ValueType &old_value, const KeyType &key, const ValueType &new_value);
   void InsertAfterNode(const ValueType &old_value, const KeyType &key, const ValueType &new_value);
+  void MoveHalfTo(BPlusTreeInternalPage *recipient);
+  void CopyNFrom(MappingType *items, int size, BufferPoolManager *bufferPoolManager);
 
 
  private:
