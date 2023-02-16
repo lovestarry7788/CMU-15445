@@ -176,8 +176,8 @@ void BPLUSTREE_TYPE::InsertIntoParent(BPlusTreePage *old_node, const KeyType &ke
   }
 
   // 2. old_node 不是根节点，找到 old_node 的父节点操作。
-  Page *parent_page = buffer_pool_manager_ -> FetchPage(old_node -> GetParentPageId());
-  InternalPage *parent_node = reinterpret_cast<InternalPage *>(parent_page -> GetData());
+  auto parent_page = buffer_pool_manager_ -> FetchPage(old_node -> GetParentPageId());
+  auto parent_node = reinterpret_cast<InternalPage *>(parent_page -> GetData());
   parent_node -> InsertAfterNode(old_node -> GetPageId(), key, new_node -> GetPageId());
 
   // number of children BEFORE insertion equals to max_size for internal nodes.
@@ -218,7 +218,7 @@ N *BPLUSTREE_TYPE::Split(N *node) {
     auto *new_internal_node = reinterpret_cast<InternalPage *>(new_node);
 
     new_internal_node -> Init(new_page_id, old_internal_node -> GetParentPageId(), internal_max_size_);
-    old_internal_node -> MoveHalfTo(new_internal_node);
+    old_internal_node -> MoveHalfTo(new_internal_node, buffer_pool_manager_);
     new_node = reinterpret_cast<N *>(old_internal_node);
   }
 
@@ -236,7 +236,31 @@ N *BPLUSTREE_TYPE::Split(N *node) {
  * necessary.
  */
 INDEX_TEMPLATE_ARGUMENTS
-void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {}
+void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
+  if(IsEmpty()) {
+    return;
+  }
+  auto leaf_page = FindLeaf(key, Operation::Delete, transaction);
+  auto leaf_node = reinterpret_cast<LeafPage *>(leaf_page -> GetData());
+
+  auto size = leaf_node -> GetSize();
+  auto new_size = leaf_node -> Remove(key, comparator_);
+
+  // 1. 删除失败
+  if(size == new_size) {
+    buffer_pool_manager_ -> UnpinPage(leaf_node -> GetPageId(), false);
+    return ;
+  }
+
+  // 2. 删除成功，不需要合并
+  if(new_size >= leaf_node -> GetMinSize()) {
+    buffer_pool_manager_ -> UnpinPage(leaf_node _> GetPageId(), true);
+    return ;
+  }
+
+  // 3. 删除成功，需要合并
+  auto
+}
 
 /*****************************************************************************
  * INDEX ITERATOR

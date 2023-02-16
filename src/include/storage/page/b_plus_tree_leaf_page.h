@@ -57,7 +57,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   auto Lookup(const KeyType &key, ValueType *value, const KeyComparator &keyComparator) const -> bool;
   void MoveHalfTo(BPlusTreeLeafPage *recipient);
   void CopyNFrom(MappingType *items, int size);
-
+  auto Remove(const KeyType &key, const KeyComparator &keyComparator) -> int;
 
  private:
   page_id_t next_page_id_;

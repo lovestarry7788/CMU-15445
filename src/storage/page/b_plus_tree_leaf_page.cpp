@@ -112,6 +112,19 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyNFrom(MappingType *items, int size) {
   IncreaseSize(size);
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Remove(const KeyType &key, const KeyComparator &keyComparator) -> int {
+  int index = KeyIndex(key, keyComparator);
+  if(index == GetSize() || keyComparator(KeyAt(index), key) != 0) { // GetSize == 0 的情况
+    return GetSize();
+  }
+  IncreaseSize(-1);
+  for(int i = index; i < GetSize(); ++i) {
+    array_[i] = array_[i+1];
+  }
+  return GetSize();
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;

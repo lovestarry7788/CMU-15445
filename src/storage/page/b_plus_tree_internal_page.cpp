@@ -98,10 +98,10 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertAfterNode(const ValueType &old_value,
 }
 
 INDEX_TEMPLATE_ARGUMENTS
-void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient) {
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage *recipient, BufferPoolManager *bufferPoolManager) {
   int start_index = GetMinSize();
   int move_num = GetSize() - GetMinSize();
-  recipient -> CopyNFrom(array_ + start_index, move_num);
+  recipient -> CopyNFrom(array_ + start_index, move_num, bufferPoolManager);
   IncreaseSize(-move_num);
 }
 
