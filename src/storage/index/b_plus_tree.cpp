@@ -252,14 +252,57 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
     return ;
   }
 
-  // 2. 删除成功，不需要合并
-  if(new_size >= leaf_node -> GetMinSize()) {
-    buffer_pool_manager_ -> UnpinPage(leaf_node _> GetPageId(), true);
+
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+template <typename N>
+void BPLUSTREE_TYPE::RedistributeOrMerge(N *node, Transaction *transaction) {
+  // 删除成功，不需要合并
+  if(node -> GetSize() >= node -> GetMinSize()) {
+    buffer_pool_manager_ -> UnpinPage(node -> GetPageId(), true);
     return ;
   }
 
-  // 3. 删除成功，需要合并
-  auto
+  // 删除成功，需要合并
+  auto parent_page = buffer_pool_manager_ -> FetchPage(node -> GetParentPageId());
+  auto parent_node = reinterpret_cast<InternalPage *>(parent_page -> GetData());
+
+  int index = parent_node -> ValueIndex(node -> GetPageId());
+  auto sibling_page_id = parent_node -> ValueAt(index == 0 ? 1 : index - 1); // 尽量找前一个兄弟节点
+  auto sibling_page = buffer_pool_manager_ -> FetchPage(sibling_page_id);
+  auto sibling_node = reinterpret_cast<N *>(sibling_page -> GetData());
+
+  // 合并后比 MaxSize 大
+  if(node -> GetSize() + sibling_page -> GetSize() >= node -> GetMaxSize()) {
+    Redistribute(parent_node, sibling_node, node, index);
+    buffer_pool_manager_ -> UnpinPage(parent_node -> GetPageId(), true);
+    buffer_pool_manager_ -> UnpinPage(sibling_node -> GetPageId(), true);
+  }
+
+  Merge(sibling_node, node, parent_node, index, transaction);
+  buffer_pool_manager_ -> UnpinPage(parent_page -> GetPageId(), true);
+  buffer_pool_manager_ -> UnpinPage(sibling_page -> GetPageId(), true);
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+template <typename N>
+void BPLUSTREE_TYPE::Redistribute(InternalPage *parent_node, N *sibling_node, N *node, int index) {
+  // index = 0, (node) (sibling)
+  // index > 0, (sibling) (node)
+  if(node -> IsLeafNode()) {
+    auto *leaf_node = reinterpret_cast<LeafPage *>(node);
+    auto *sibling_leaf_node = reinterpret_cast<LeafPage *>(node);
+    if(index == 0) {
+      sibling_leaf_node -> MoveBeginToEnd(leaf_node);
+    } else {
+      sibling_leaf_node -> MoveEndToBegin(leaf_node);
+    }
+  } else {
+
+  }
+
+  buffer_pool_manager_ -> UnpinPage(parent_node);
 }
 
 /*****************************************************************************

@@ -125,6 +125,28 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::Remove(const KeyType &key, const KeyComparator 
   return GetSize();
 }
 
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveBeginToEnd(BPlusTreeLeafPage *recipent) {
+  recipent -> array_[GetSize()] = array_[0];
+  recipent -> IncreaseSize(1);
+
+  IncreaseSize(-1);
+  for(int i = 0; i < GetSize(); ++i) {
+    array_[i] = array_[i+1];
+  }
+}
+
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveEndToBegin(BPlusTreeLeafPage *recipent) {
+  for(int i = GetSize(); i > 0; --i) {
+    recipent -> array_[i+1] = recipent -> array_[i];
+  }
+  recipent->array_[0] = array_[GetSize() - 1];
+  recipent ->IncreaseSize(1);
+
+  IncreaseSize(-1);
+}
+
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;
 template class BPlusTreeLeafPage<GenericKey<8>, RID, GenericComparator<8>>;
 template class BPlusTreeLeafPage<GenericKey<16>, RID, GenericComparator<16>>;

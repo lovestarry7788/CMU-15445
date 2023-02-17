@@ -98,6 +98,9 @@ class BPlusTree {
 
   template<typename N> N *Split(N *node);
 
+  template<typename N> void RedistributeOrMerge(N *node, Transaction *transaction);
+  template<typename N> void Redistribute(InternalPage *parent_node, N *siblingNode, N *node, int index);
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
